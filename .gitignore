@@ -34,3 +34,6 @@ google_credentials*.json
 
 logs/
 *.log
+
+# Demo video output (regenerable)
+scripts/demo/out/
