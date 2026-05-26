@@ -60,7 +60,7 @@ class Classification(BaseModel):
     def verdict_emoji(self) -> str:
         return "✅" if self.qualified else "❌"
 
-    def to_telegram_text(self) -> str:
+    def to_telegram_text(self, *, prompt_version: str | None = None) -> str:
         head = f"{self.verdict_emoji()} {'CUALIFICADO' if self.qualified else 'NO CUALIFICADO'}"
         conf = f"Confianza: {int(self.confidence * 100)}%"
         bullets = []
@@ -70,7 +70,15 @@ class Classification(BaseModel):
         bullets.append(f"• Ubicacion: {s.location} {'✓' if s.location_match else '✗'}")
         needs = ", ".join(s.needs) if s.needs else "—"
         bullets.append(f"• Necesidades: {needs} {'✓' if s.needs_match else '✗'}")
-        return "\n".join([head, conf, "", *bullets, "", self.reason])
+        footer_parts = [
+            self.provider_used or "?",
+            self.model_used or "?",
+            f"{self.latency_ms}ms" if self.latency_ms is not None else "?ms",
+        ]
+        if prompt_version:
+            footer_parts.append(f"prompt {prompt_version}")
+        footer = "— " + " · ".join(footer_parts)
+        return "\n".join([head, conf, "", *bullets, "", self.reason, "", footer])
 
 
 class LeadRecord(BaseModel):

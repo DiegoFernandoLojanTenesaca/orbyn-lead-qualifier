@@ -18,3 +18,5 @@ class AgentState(TypedDict, total=False):
     classification: Classification
     reply_text: str
     error: str
+    # short-circuit del pre-filtro: respuesta directa sin pasar por el LLM
+    prefilter_reply: str

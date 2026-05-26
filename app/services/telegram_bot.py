@@ -21,19 +21,28 @@ from app.core.logging import get_logger
 from app.core.prompts import PROMPT_VERSION
 from app.schemas.lead import LeadInput, LeadRecord
 from app.services.sheets import SheetsClient
-from app.services.storage import count_recent, insert_lead, mark_synced
+from app.services.storage import claim_update, count_recent, insert_lead, mark_synced, stats_recent
 
 log = get_logger(__name__)
 
 HELP_TEXT = (
     "👋 *orbyn-lead-qualifier*\n\n"
-    "Soy un bot que cualifica leads contra el ICP de Orbyn.\n"
-    "Mandame los datos de un lead en *texto libre* y te dire si encaja.\n\n"
-    "*Ejemplo*:\n"
-    "Empresa de consultoria, 15 empleados, Madrid, "
-    "quieren automatizar su proceso de ventas con IA.\n\n"
-    "Comandos:\n"
+    "Cualifico leads contra el ICP de Orbyn: empresas de *servicios* o "
+    "*consultoría*, *≥5 empleados*, en *España o LATAM*, con interés en "
+    "*automatización / IA / agentes / RAG / chatbots*.\n\n"
+    "Mándame los datos del lead en *texto libre* — analizo, decido y "
+    "respondo con razonamiento.\n\n"
+    "*Ejemplos*\n\n"
+    "✅ _Consultora de RRHH, 22 empleados, Valencia, quieren un agente "
+    "para responder consultas internas con su Confluence._\n"
+    "→ CUALIFICADO\n\n"
+    "❌ _Soy autónomo y vendo cursos de yoga online, trabajo solo. Quiero "
+    "un chatbot._\n"
+    "→ NO CUALIFICADO (autónomo, falla tipo y tamaño)\n\n"
+    "*Comandos*\n"
     "/start, /help — esta ayuda\n"
+    "/version — info técnica (modelo, prompt, fallbacks)\n"
+    "/stats — leads procesados en las últimas 24 h\n"
     "/id — muestra tu chat\\_id"
 )
 
@@ -47,11 +56,56 @@ async def cmd_id(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.effective_message.reply_text(f"chat_id: {chat_id}")
 
 
+async def cmd_version(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    from app import __version__ as app_version
+    from app.services.llm import PROVIDERS
+
+    settings = get_settings()
+    primary = settings.llm_provider
+    chain = [p for p in settings.fallback_order_list if settings.provider_key(p)]
+    primary_model = next((p.model for p in PROVIDERS if p.name == primary), "?")
+    text = (
+        f"🛠 *orbyn-lead-qualifier* v{app_version}\n\n"
+        f"• Prompt: `{PROMPT_VERSION}`\n"
+        f"• Primary: `{primary}` ({primary_model})\n"
+        f"• Fallback: {' → '.join(chain)}\n"
+        f"• Sheets: {'on' if settings.sheets_enabled else 'off'}\n"
+        f"• Rate limit: {settings.rate_limit_per_minute}/min por chat\n"
+        f"• Max input: {settings.max_input_chars} chars"
+    )
+    await update.effective_message.reply_text(text, parse_mode="Markdown")
+
+
+async def cmd_stats(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    chat = update.effective_chat
+    if not chat:
+        return
+    s24 = stats_recent(chat_id=chat.id, hours=24)
+    sall = stats_recent(chat_id=None, hours=24)
+    text = (
+        f"📊 *Stats últimas 24 h*\n\n"
+        f"*Este chat*: {s24['total']} leads · "
+        f"{s24['qualified']} ✅ / {s24['not_qualified']} ❌ "
+        f"({s24['qualified_pct']:.0f}% cualifica)\n"
+        f"latencia media: {s24['avg_latency_ms']} ms · "
+        f"confianza media: {s24['avg_confidence']:.2f}\n\n"
+        f"*Global*: {sall['total']} leads · "
+        f"{sall['qualified']} ✅ / {sall['not_qualified']} ❌"
+    )
+    await update.effective_message.reply_text(text, parse_mode="Markdown")
+
+
 async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     msg = update.effective_message
     chat = update.effective_chat
     user = update.effective_user
     if not msg or not chat or not msg.text:
+        return
+
+    # Idempotencia: Telegram puede reentregar el mismo update si nuestra
+    # respuesta tarda; sin esto el bot procesa 2x el mismo lead.
+    if not claim_update(update.update_id):
+        log.info("duplicate_update_skipped", update_id=update.update_id, chat_id=chat.id)
         return
 
     settings = get_settings()
@@ -137,5 +191,7 @@ def build_application() -> Application:
     app.bot_data["sheets"] = SheetsClient(settings)
     app.add_handler(CommandHandler(["start", "help"], cmd_start))
     app.add_handler(CommandHandler("id", cmd_id))
+    app.add_handler(CommandHandler("version", cmd_version))
+    app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     return app

@@ -32,6 +32,14 @@ CREATE TABLE IF NOT EXISTS leads (
 );
 CREATE INDEX IF NOT EXISTS idx_leads_chat  ON leads(chat_id);
 CREATE INDEX IF NOT EXISTS idx_leads_synced ON leads(synced_to_sheet);
+
+-- Idempotencia: Telegram reentrega updates en caso de timeout. Si el bot
+-- ya proceso este update_id, no volvemos a clasificar ni a escribir en la
+-- Sheet. La frase de PRODUCTION.md sobre dedup ya esta implementada aqui.
+CREATE TABLE IF NOT EXISTS processed_updates (
+    update_id  INTEGER PRIMARY KEY,
+    seen_at    TEXT NOT NULL
+);
 """
 
 
@@ -85,3 +93,57 @@ def count_recent(chat_id: int, seconds: int = 60, path: Path = _DB_PATH) -> int:
             (chat_id, cutoff),
         ).fetchone()
         return int(row[0])
+
+
+def claim_update(update_id: int, path: Path = _DB_PATH) -> bool:
+    """Reserva un update_id. Devuelve True si es la primera vez que lo vemos
+    (=> hay que procesarlo); False si ya estaba (=> skip por idempotencia).
+
+    Usa INSERT OR IGNORE: atomico y barato. La clave primaria evita duplicados
+    incluso si dos handlers concurrentes intentan claimar el mismo update.
+    """
+    from datetime import datetime
+
+    now = datetime.now().isoformat(timespec="seconds")
+    with _connect(path) as conn:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO processed_updates (update_id, seen_at) VALUES (?, ?)",
+            (update_id, now),
+        )
+        return cur.rowcount == 1
+
+
+def stats_recent(chat_id: int | None = None, hours: int = 24, path: Path = _DB_PATH) -> dict:
+    """Devuelve estadisticas para el comando /stats.
+
+    Si chat_id es None, agrega global; si no, filtra por chat_id.
+    """
+    from datetime import datetime, timedelta
+
+    cutoff = (datetime.now() - timedelta(hours=hours)).isoformat(timespec="seconds")
+    with _connect(path) as conn:
+        if chat_id is None:
+            row = conn.execute(
+                """SELECT COUNT(*), SUM(qualified), AVG(latency_ms), AVG(confidence)
+                   FROM leads WHERE received_at >= ?""",
+                (cutoff,),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """SELECT COUNT(*), SUM(qualified), AVG(latency_ms), AVG(confidence)
+                   FROM leads WHERE received_at >= ? AND chat_id = ?""",
+                (cutoff, chat_id),
+            ).fetchone()
+    total = int(row[0] or 0)
+    qual = int(row[1] or 0)
+    avg_lat = float(row[2] or 0.0)
+    avg_conf = float(row[3] or 0.0)
+    return {
+        "hours": hours,
+        "total": total,
+        "qualified": qual,
+        "not_qualified": total - qual,
+        "qualified_pct": (qual / total * 100.0) if total else 0.0,
+        "avg_latency_ms": int(avg_lat),
+        "avg_confidence": avg_conf,
+    }
