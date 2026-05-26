@@ -1,0 +1,16 @@
+services:
+  bot:
+    build: .
+    image: orbyn-lead-qualifier:latest
+    container_name: orbyn-lead-qualifier
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/data
+      # service account JSON si la activas
+      - ./service_account.json:/app/service_account.json:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sqlite3; sqlite3.connect('/data/leads.db')"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
