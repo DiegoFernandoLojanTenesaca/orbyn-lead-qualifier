@@ -1,9 +1,10 @@
 """Prompts del clasificador. Centralizados aqui para versionarlos como cualquier codigo."""
 from __future__ import annotations
 
-# v2: anadidos few-shot examples canonicos para forzar criterio real (no
-# "siempre cualifica") y mostrar al modelo como tratar bordes habituales.
-PROMPT_VERSION = "v2"
+# v3: refuerza la regla numerica (>=5 incluye 5,6,7,8,9...) tras detectar
+# que el modelo a veces marcaba 9 socios como "no llega al minimo". Anade
+# un ejemplo de borde justo en 5/6/9 y otro de borde fuera (3 empleados).
+PROMPT_VERSION = "v3"
 
 # El system prompt es estricto a proposito: el modelo debe devolver SIEMPRE
 # JSON valido segun el schema. Cualquier intento del usuario de "ignorar
@@ -19,9 +20,13 @@ ICP de Orbyn (LAS CUATRO condiciones deben cumplirse para cualificar):
      servicios profesionales B2B, software house, agencia de marketing.
      NO cuenta: fabrica, planta industrial, retail, restaurante, ecommerce
      puro de producto fisico, SaaS de producto, autonomo en solitario, ONG.
-  2. Tamano: minimo 5 empleados. Autonomos y micro-equipos (<5) NO cualifican.
+  2. Tamano: MINIMO 5 empleados (es un >= 5, incluye 5, 6, 7, 8, 9, 10...).
+     - 5 o mas personas, socios, abogados, contadores, empleados,
+       desarrolladores, etc. SI cualifican por tamano.
+     - Solo NO cualifican por tamano: autonomos solos (1 persona),
+       micro-equipos de 2 a 4 personas.
      Si dicen "pequena", "pyme" o no concretan, marca el dato como incierto
-     pero NO inventes el numero.
+     pero NO inventes el numero, y baja la confianza.
   3. Ubicacion: Espana o cualquier pais de Latinoamerica.
      LATAM incluye Mexico, Colombia, Argentina, Chile, Peru, Ecuador,
      Uruguay, Venezuela, Bolivia, Paraguay, Costa Rica, Panama, Republica
@@ -108,6 +113,24 @@ OUTPUT:
   "location":"Bogota, Colombia","location_match":true,
   "needs":["asistente RAG","jurisprudencia"],"needs_match":true},
  "reason": "Despacho juridico en LATAM con 12 socios que pide un RAG sobre su corpus interno; encaja con los cuatro criterios."}
+
+INPUT: "Despacho de abogados en Buenos Aires, 9 socios, quieren un RAG sobre jurisprudencia interna."
+OUTPUT:
+{"qualified": true, "confidence": 0.9,
+ "signals": {"company_type":"servicios","company_type_match":true,
+  "employees_estimate":"9","size_match":true,
+  "location":"Buenos Aires, Argentina","location_match":true,
+  "needs":["RAG","jurisprudencia"],"needs_match":true},
+ "reason": "9 socios cumple el minimo de 5 empleados; servicios profesionales en LATAM con necesidad clara de RAG, cualifica."}
+
+INPUT: "Asesoria contable, 4 personas, Lima, quieren chatbot."
+OUTPUT:
+{"qualified": false, "confidence": 0.85,
+ "signals": {"company_type":"servicios","company_type_match":true,
+  "employees_estimate":"4","size_match":false,
+  "location":"Lima, Peru","location_match":true,
+  "needs":["chatbot"],"needs_match":true},
+ "reason": "Servicios en LATAM con interes en IA pero 4 personas estan por debajo del minimo de 5; falla solo el tamano."}
 
 INPUT: "Startup SaaS en Berlin, 30 ingenieros, vendemos producto B2B y queremos integrar GPT en nuestra app."
 OUTPUT:

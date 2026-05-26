@@ -63,7 +63,8 @@ async def cmd_version(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     settings = get_settings()
     primary = settings.llm_provider
     chain = [p for p in settings.fallback_order_list if settings.provider_key(p)]
-    primary_model = next((p.model for p in PROVIDERS if p.name == primary), "?")
+    spec = PROVIDERS.get(primary)
+    primary_model = spec.model if spec else "?"
     text = (
         f"🛠 *orbyn-lead-qualifier* v{app_version}\n\n"
         f"• Prompt: `{PROMPT_VERSION}`\n"
