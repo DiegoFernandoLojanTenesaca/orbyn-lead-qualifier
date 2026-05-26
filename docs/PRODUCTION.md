@@ -99,15 +99,25 @@ Optimizaciones que sí aplicaría desde el día uno:
 ## Las 3 frases para el email
 
 > 1. **Errores y entrega**: hoy el envío a Sheets y la respuesta a Telegram son
->    best-effort; en producción los pondría detrás de una cola con reintentos
->    y backoff, dedup por `update_id` para evitar reprocesar updates reentregados
->    por Telegram, y un cron que reconcilia los leads con `synced=0`.
-> 2. **Prompt injection**: ya sanitizo el input y fuerzo `response_format=json_object`
->    + validación Pydantic; añadiría allow-list de chats, una primera pasada
->    barata (Llama-Guard o similar) para descartar jailbreaks evidentes, y
->    logging cifrado de prompt/respuesta para auditar incidentes.
-> 3. **Costes**: con APIs gratis y failover funciono ahora, pero en producción
->    pondría un proveedor pago como primario con la cascada gratis como red,
->    cache de clasificaciones idénticas, modelo pequeño por defecto con
->    enrutado al grande solo cuando baje la confianza, y un panel con
->    tokens/lead y $/lead para no descubrir los costes a fin de mes.
+>    best-effort y el bot ya guarda en SQLite local incluso si Sheets cae; en
+>    producción metería los outbound detrás de una cola con backoff
+>    exponencial, dedup por `update_id` para no reprocesar updates reentregados
+>    por Telegram, un cron que reconcilia los leads marcados `synced=0` y
+>    healthcheck + métricas para que el orquestador (k8s, Coolify) reinicie
+>    el pod antes de que se pierdan leads.
+> 2. **Prompt injection**: ya neutralizo el cierre del bloque del *user
+>    prompt*, fuerzo `response_format=json_object` con validación Pydantic
+>    estricta y meto 3 ejemplos negativos en el few-shot (incluyendo un
+>    intento de "ignora instrucciones") para que el modelo aprenda a bajar
+>    la confianza, no a subirla; en producción añadiría allow-list por
+>    `chat_id` o `/start <token>`, una primera pasada barata tipo Llama-Guard
+>    para descartar jailbreaks antes de gastar tokens, y logging cifrado del
+>    prompt/respuesta con retención corta para auditar incidentes.
+> 3. **Costes**: hoy todo va con APIs gratis (Groq + 6 fallbacks) que
+>    funciona porque la demo la usaremos cuatro personas, pero free tier no
+>    es producción: pondría un proveedor pago como primario con la cascada
+>    gratis como red de seguridad, modelo pequeño por defecto
+>    (`llama-3.1-8b-instant`, 10× más barato) con enrutado al grande sólo
+>    cuando la `confidence` cae por debajo de 0.7, cache de clasificaciones
+>    idénticas en ventana de N horas, y un panel con tokens/lead y €/lead
+>    para no descubrir los costes a fin de mes.
