@@ -1,0 +1,8 @@
+Orbyn-lead-qualifier: un bot de Telegram que cualifica leads contra el ICP de Orbyn.
+Consultora de Barcelona, 28 empleados, pide un agente IA: cualifica al 96 por ciento en 716 milisegundos. El footer muestra provider, modelo, latencia y versión del prompt.
+Autónomo en solitario: no cualifica, falla tipo y tamaño. No es plantilla, marca cada señal.
+Nueve socios cumple el mínimo de cinco. Servicios en Latinoamérica, cualifica.
+Tamaño y ubicación encajan, pero es fábrica, no servicios. No cualifica por tipo.
+Prompt injection: el bot identifica la manipulación, baja la confianza al 40 por ciento, rechaza.
+Stats muestra observabilidad: leads, porcentaje cualificado, latencia. Los mismos datos van a una Google Sheet.
+Repo y producción en GitHub.
